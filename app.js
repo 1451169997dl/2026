@@ -103,6 +103,7 @@
       let requestNumber = 0;
       let waitingForGesture = false;
       let userPaused = false;
+      let initialAutoPending = true;
       function updateNextMusicLabel() {
         if (nextMusicButton) {
           nextMusicButton.setAttribute('aria-label', `换一首配乐，下一曲：${tracks[(currentTrack + 1) % tracks.length].name}`);
@@ -120,6 +121,7 @@
       function disarmGestureRetry() {
         waitingForGesture = false;
         document.removeEventListener('pointerdown', onPlaybackGesture, true);
+        document.removeEventListener('click', onPlaybackGesture, true);
         document.removeEventListener('keydown', onPlaybackGesture, true);
       }
       function onPlaybackGesture(event) {
@@ -136,12 +138,13 @@
         if (!waitingForGesture) {
           waitingForGesture = true;
           document.addEventListener('pointerdown', onPlaybackGesture, { capture: true, passive: true });
+          document.addEventListener('click', onPlaybackGesture, true);
           document.addEventListener('keydown', onPlaybackGesture, true);
         }
         setMusicState(false);
       }
       function pauseMusic(byUser = false) {
-        if (byUser) userPaused = true;
+        if (byUser) { userPaused = true; initialAutoPending = false; }
         disarmGestureRetry();
         playRequested = false;
         requestNumber += 1;
@@ -151,20 +154,21 @@
       function playMusic(source = 'manual') {
         if (document.hidden || (source !== 'manual' && userPaused)) return;
         if (source === 'manual') userPaused = false;
+        initialAutoPending = false;
         disarmGestureRetry();
         playRequested = true;
         const thisRequest = ++requestNumber;
-        function failedPlayback() {
+        function failedPlayback(error) {
           if (thisRequest !== requestNumber) return;
           playRequested = false;
-          if (source === 'auto') armGestureRetry();
+          if (source === 'auto' || (error && error.name === 'NotAllowedError')) armGestureRetry();
           else setMusicState(false, true);
         }
         let playback;
         try {
           playback = audio.play();
-        } catch (_) {
-          failedPlayback();
+        } catch (error) {
+          failedPlayback(error);
           return;
         }
         Promise.resolve(playback).then(() => {
@@ -207,6 +211,7 @@
       });
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) pauseMusic();
+        else if (initialAutoPending && !userPaused) playMusic('auto');
       });
       playMusic('auto');
     }
